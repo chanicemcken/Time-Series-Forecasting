@@ -1,0 +1,339 @@
+---
+title: "DATA 624 Project 1"
+author: "Chanice Mckenzie"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(fpp3)
+library(writexl)
+library(tidyr)
+library(lubridate)
+```
+#PART A: ATM Forecast Report 
+
+Objective
+
+**The objective of this analysis is to forecast the daily cash withdrawals for four ATM machines for May 2010 using historical data. The variable Cash is measured in hundreds of dollars. The goal is to apply time series forecasting methods and evaluate appropriate techniques based on the data's structure.**
+
+Data Preparation
+
+**The dataset consists of daily cash withdrawals for four ATMs over approximately one year. Each ATM represents its own time series.**
+```{r}
+data <- read_excel("ATM624Data.xlsx") %>%
+  mutate(DATE = as.Date(DATE, origin = "1899-12-30")) %>%
+  as_tsibble(index = DATE, key = ATM)
+
+data
+```
+
+**The DATE variable was converted into a proper date format, and the data was converted into a tsibble object so that forecasting models could be applied separately to each ATM.**
+
+Analysis
+```{r}
+autoplot(data, Cash) +
+  facet_wrap(~ATM, scales = "free_y") +
+  labs(
+    title = "Daily Cash Withdrawals by ATM",
+    x = "Date",
+    y = "Cash (hundreds of dollars)"
+  )
+```
+
+**Initial visualizations suggest that the series are fairly stable over time. There is no strong long-term trend or obvious seasonality, although there is some day-to-day variation.**
+
+Forecasting Methodology
+
+ETS Models
+
+**Exponential smoothing models were fit to each ATM time series.**
+```{r}
+fit_ets <- data %>%
+  model(ETS(Cash))
+
+report(fit_ets)
+```
+**ETS models were considered appropriate because they can capture level, trend, and seasonality when present.**
+
+ARIMA Models
+
+**ARIMA models were also fit for comparison.**
+```{r}
+fit_arima <- data %>%
+  model(ARIMA(Cash))
+
+report(fit_arima)
+```
+**ARIMA models allow for autocorrelation and differencing if needed. In this case, ARIMA was explored to confirm whether any additional structure beyond a stable level was present.**
+
+Techniques Considered but Not Used
+
+**Several techniques were considered but not selected as the final approach:**
+
+**Trend models were not emphasized because the data did not show a consistent upward or downward movement.**
+**Seasonal models were not selected because no clear repeating seasonal pattern was visible in the data.**
+**More complex ARIMA models were not necessary because the data appeared relatively simple.**
+**Regression or causal forecasting methods were not used because no external predictors were provided.**
+
+Model Comparison
+```{r}
+accuracy(fit_ets)
+accuracy(fit_arima)
+```
+**Both ETS and ARIMA models were examined. Because the series appear relatively stable and simple, the ETS model was selected as the final model due to its interpretability.**
+
+Final Model Selection
+
+**The final model selected was an ETS model for each ATM. This model was chosen because it captures the stable level of the series without imposing unnecessary complexity.**
+
+**For these data, the resulting forecasts are relatively flat, which is consistent with ETS(A,N,N).**
+
+Residual Diagnostics
+
+**To evaluate the adequacy of the selected forecasting models, residual diagnostics were performed. Because each ATM represents a separate time series, residual diagnostics were conducted individually for each ATM model.**
+```{r}
+atm1_data <- data %>%
+  filter(ATM == "ATM1")
+
+fit_ets_atm1 <- atm1_data %>%
+  model(ETS(Cash))
+
+fit_ets_atm1 %>%
+  gg_tsresiduals()
+
+atm2_data <- data %>%
+  filter(ATM == "ATM2")
+
+fit_ets_atm2 <- atm2_data %>%
+  model(ETS(Cash))
+
+fit_ets_atm2 %>%
+  gg_tsresiduals()
+
+atm3_data <- data %>%
+  filter(ATM == "ATM3")
+
+fit_ets_atm3 <- atm3_data %>%
+  model(ETS(Cash))
+
+fit_ets_atm3 %>%
+  gg_tsresiduals()
+
+atm4_data <- data %>%
+  filter(ATM == "ATM4")
+
+fit_ets_atm4 <- atm1_data %>%
+  model(ETS(Cash))
+
+fit_ets_atm4 %>%
+  gg_tsresiduals()
+```
+**Residual diagnostics indicate that the models for ATM1, ATM2, and ATM4 are adequate, with residuals behaving like white noise, while ATM3 shows a large outlier, suggesting an anomaly rather than a systematic pattern.**
+
+Forecasts for May 2010
+```{r}
+fc_ets <- fit_ets %>%
+  forecast(h = "31 days")
+
+autoplot(data, Cash) +
+  autolayer(fc_ets) +
+  facet_wrap(~ATM, scales = "free_y") +
+  labs(
+    title = "Forecasts for May 2010",
+    x = "Date",
+    y = "Cash (hundreds of dollars)"
+  )
+```
+
+**The forecasts for May 2010 are relatively constant across days for each ATM. This occurs because the selected ETS model assumes that the series has a stable level with no strong trend or seasonality.**
+
+Forecast Interpretation
+
+**The flat forecasts suggest that ATM withdrawal behavior is stable over time and that the best prediction for future values is the current estimated level of the series. This is a reasonable result when no strong systematic patterns are present.This means cash demand is predictable.**
+
+Forecast Output File
+
+**The forecast values for May 2010 were exported to an Excel-readable file.**
+```{r}
+forecast_output <- fc_ets %>%
+  as_tibble() %>%
+  select(DATE, ATM, .mean) %>%
+  rename(Forecast_Cash = .mean)
+
+write_xlsx(forecast_output, "ATM_Forecast_May2010.xlsx")
+forecast_output
+```
+Limitations
+
+**This analysis has several limitations:**
+
+**Only one year of data was available.**
+**No external variables, such as holidays or local events, were included.**
+
+**Additional historical data and explanatory variables could improve the forecasts.**
+
+Conclusion
+
+**This analysis used ETS and ARIMA methods to forecast ATM cash withdrawals for May 2010. Based on the observed stability of the series and the residual diagnostics, a simple ETS model was selected as the most appropriate forecasting approach. The resulting forecasts are consistent with the historical behavior of the data and provide a practical basis for ATM cash planning.**
+
+
+**PART B:Forecasting Power Report**
+
+Objective
+
+**The objective of this analysis is to model monthly residential power consumption and produce forecasts for each month of 2014. The variable `KWH` represents power consumption in kilowatt hours.**
+
+Data Preparation
+
+```{r}
+power_data <- read_excel("ResidentialCustomerForecastLoad-624.xlsx") %>%
+  mutate(
+    Month = yearmonth(`YYYY-MMM`)
+  ) %>%
+  select(Month, KWH) %>%
+  as_tsibble(index = Month)
+
+power_data
+```
+
+**The source data runs from January 1998 through December 2013. During data review, one missing observation was identified for September 2008. Because this is monthly data with a strong seasonal pattern, that missing value was imputed using the average of the same month from the adjacent years.**
+
+```{r}
+power_data <- power_data %>%
+  mutate(
+    KWH = if_else(
+      Month == yearmonth("2008 Sep"),
+      mean(c(
+        KWH[Month == yearmonth("2007 Sep")],
+        KWH[Month == yearmonth("2009 Sep")]
+      ), na.rm = TRUE),
+      KWH
+    )
+  )
+
+power_data %>% filter(Month >= yearmonth("2008 Aug"), Month <= yearmonth("2008 Oct"))
+```
+
+Exploratory Analysis
+
+```{r}
+autoplot(power_data, KWH) +
+  labs(
+    title = "Monthly Residential Power Consumption",
+    x = "Month",
+    y = "KWH"
+  )
+```
+
+**The time plot shows strong seasonality and moderate long-term level changes. Consumption is generally highest in winter and summer months and lower during other seasons, which is consistent with residential heating and cooling demand. Because the data are monthly and seasonal, models that can handle recurring seasonal structure are appropriate.**
+
+Forecasting Process
+
+**To choose a forecasting method, I compared several approaches: Seasonal naive benchmark, ETS models, ARIMA**
+
+**To evaluate performance, the final 12 months (2013) were held out as a test set, and the remaining data were used for training.**
+
+```{r}
+train <- power_data %>% filter_index(. ~ "2012 Dec")
+test  <- power_data %>% filter_index("2013 Jan" ~ .)
+
+fit_models <- train %>%
+  model(
+    SNAIVE = SNAIVE(KWH),
+    ETS = ETS(KWH),
+    ARIMA = ARIMA(KWH)
+  )
+
+# Training accuracy
+accuracy(fit_models)
+
+# Test forecasts
+fc_models <- fit_models %>%
+  forecast(new_data = test)
+
+# Test accuracy
+accuracy(fc_models, test)
+```
+Techniques Used
+
+Seasonal Naive
+
+**Seasonal naive was used as a benchmark because for strongly seasonal monthly series it is often a reasonable starting point.**
+
+ETS
+
+**ETS models were used because they are well suited to time series with level, trend, and seasonal structure.**
+
+ARIMA
+
+**ARIMA models were also fit because they can flexibly model autocorrelation and seasonal differencing when needed.**
+
+Techniques Not Used
+
+**More complicated methods such as regression with external predictors were not used because no explanatory variables were provided. Highly complex models were also avoided because the series is relatively structured and interpretable.**
+
+Model Selection
+
+**The ARIMA model provided the best overall forecast performance and was selected as the final model.**
+
+```{r}
+report(fit_models)
+```
+
+Residual Diagnostics
+
+**Residual diagnostics were checked for the final ARIMA model.**
+
+```{r}
+fit_models %>%
+  select(ARIMA) %>%
+  gg_tsresiduals()
+```
+
+**The residual diagnostics suggest that the model is adequate. The residuals are centered around zero, and the autocorrelation in the residuals appears limited.**
+
+Final Forecast for 2014
+
+**The final model was re-fit using the full dataset and then used to generate forecasts for the 12 months of 2014.**
+
+```{r}
+final_fit <- power_data %>%
+  model(ARIMA(KWH))
+
+final_fc <- final_fit %>%
+  forecast(h = "12 months")
+
+autoplot(final_fc, power_data) +
+  labs(
+    title = "Forecast of Monthly Residential Power Consumption for 2014",
+    x = "Month",
+    y = "KWH"
+  )
+```
+
+```{r}
+forecast_output <- final_fc %>%
+  hilo(level = 95) %>%
+  unpack_hilo(`95%`) %>%
+  as_tibble() %>%
+  select(Month, .mean, `95%_lower`, `95%_upper`) %>%
+  rename(
+    Forecast_KWH = .mean,
+    Lower_95 = `95%_lower`,
+    Upper_95 = `95%_upper`
+  )
+
+forecast_output
+```
+
+Forecast Interpretation
+
+**The 2014 forecast preserves the strong seasonal pattern seen in the historical data. Higher KWH values are forecast for winter and late summer months, while lower values are forecast in spring and autumn. This pattern is reasonable given the historical shape of the series and the seasonal nature of residential electricity demand.**
+
+Conclusion
+
+**The series displays strong and recurring monthly seasonality, so a seasonal forecasting framework was necessary. After comparing seasonal naive, ETS, and ARIMA models, the ARIMA model was selected because it provided the best test-set performance while also passing residual diagnostics reasonably well. The final 2014 forecasts are therefore based on the fitted ARIMA model and are consistent with the historical seasonal pattern.**
